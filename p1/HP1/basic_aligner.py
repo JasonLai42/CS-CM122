@@ -55,12 +55,14 @@ def parse_ref_file(ref_fn):
     TODO: Use this space to implement any additional functions you might need
 
 """
+# Return position of matched 50 bp end in reference genome, otherwise return -1
 def test_read(seq_read, ref_index):
     if ref_index.get(seq_read, "DNE") != "DNE":
         return ref_index[seq_read]
     else:
         return -1
 
+# Take the unmatched end of the read, the chunk of reference we will match it to, the original position in the reference genome of the chunk, and the mismatch dictionary
 def test_gap(seq_read, reference, original_pos, mismatches):
     for gap in range(0, 20):
         mismatch_count = 0
@@ -116,51 +118,70 @@ if __name__ == "__main__":
     # flatten the list of paired-end reads, so we have list of just reads
     # reads = [item for sublist in input_reads for item in sublist]
 
+    # Create dictionary of all substrings of length 50 (key) and their positions (value)
     ref_index = dict()
     final_index = len(reference) - len(input_reads[0][0])
     for index in range(0, final_index + 1):
         ref_index[reference[index:index+50]] = index
 
+    # Create dictionary of all mutations (key) and the number of times they are observed (value)
     mismatches = dict()
     for pair in input_reads:
+        # Case 1: check if left end is in reference dictionary
         first_pos = test_read(pair[0], ref_index)
+        # Case 2: check if reverse of left end is in reference dictionary
         first_rev_pos = test_read(pair[0][::-1], ref_index)
+        # Case 3: check if right end is in reference dictionary
         second_pos = test_read(pair[1], ref_index)
+        # Case 4: check if reverse of right end is in reference dictionary
         second_rev_pos = test_read(pair[1][::-1], ref_index)
 
+        # If Case 1
         if first_pos != -1:
+            # If the right end of the read also matches, this read is a perfect match, continue
             if second_rev_pos != -1:
                 continue
+            # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
                 start = first_pos + len(pair[0]) + 90
                 end = start + 20 + len(pair[1])
                 if end < len(reference):
                     test_gap(pair[1][::-1], reference[start:end], start, mismatches)
+        # Else if Case 2
         elif first_rev_pos != -1:
+            # If the right end of the read also matches, this read is a perfect match, continue
             if second_pos != -1:
                 continue
+            # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
                 start = first_rev_pos + len(pair[0]) + 90
                 end = start + 20 + len(pair[1])
                 if end < len(reference):
                     test_gap(pair[1], reference[start:end], start, mismatches)
+        # Else if Case 3
         elif second_pos != -1:
+            # If the left end of the read also matches, this read is a perfect match, continue
             if first_rev_pos != -1:
                 continue
+            # Find the mutations in the left end of the read (90 - 110 bp back)
             else:
                 start = second_pos - 110 - len(pair[0])
                 end = second_pos - 90
                 if start >= 0:
                     test_gap(pair[0][::-1], reference[start:end], start, mismatches)
+        # Else if Case 4
         elif second_rev_pos != -1:
+            # If the left end of the read also matches, this read is a perfect match, continue
             if first_pos != -1:
                 continue
+            # Find the mutations in the left end of the read (90 - 110 bp back)
             else:
                 start = second_rev_pos - 110 - len(pair[0])
                 end = second_rev_pos - 90
                 if start >= 0:
                     test_gap(pair[0], reference[start:end], start, mismatches)
 
+    # Iterate through the dictionary of mutations and pick only the ones that are observed above a certain threshold
     true_snps = []
     for k, v in mismatches.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
