@@ -83,6 +83,19 @@ def test_gap(seq_read, reference, original_pos, mismatches):
                 mismatches[(reference[mismatch_pos + gap], seq_read[mismatch_pos], original_pos + mismatch_pos + gap)] += 1
             break
 
+def find_match(seq_read, ref_dict, mismatches):
+    match_found = -1
+    for k, v in ref_dict.items():
+        for index in range(0, len(k)-1):
+            if seq_read[:index] == k[:index] and seq_read[index + 1:] == k[index + 1:]:
+                if mismatches.get((k[index], seq_read[index], v + index), "DNE") == "DNE":
+                    mismatches[(k[index], seq_read[index], v + index)] = 1
+                else: 
+                    mismatches[(k[index], seq_read[index], v + index)] += 1
+                match_found = 1
+                continue
+    return match_found
+
 
 
 if __name__ == "__main__":
@@ -131,55 +144,49 @@ if __name__ == "__main__":
         first_pos = test_read(pair[0], ref_index)
         # Case 2: check if reverse of left end is in reference dictionary
         first_rev_pos = test_read(pair[0][::-1], ref_index)
-        # Case 3: check if right end is in reference dictionary
-        second_pos = test_read(pair[1], ref_index)
-        # Case 4: check if reverse of right end is in reference dictionary
-        second_rev_pos = test_read(pair[1][::-1], ref_index)
 
         # If Case 1
         if first_pos != -1:
             # If the right end of the read also matches, this read is a perfect match, continue
-            if second_rev_pos != -1:
+            if test_read(pair[1][::-1], ref_index) != -1:
                 continue
             # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
-                start = first_pos + len(pair[0]) + 90
-                end = start + 20 + len(pair[1])
-                if end < len(reference):
-                    test_gap(pair[1][::-1], reference[start:end], start, mismatches)
-        # Else if Case 2
-        elif first_rev_pos != -1:
+                find_match(pair[1][::-1], ref_index, mismatches)
+        else:
+            match_found = find_match(pair[0], ref_index, mismatches)
+            
+            if match_found == 1:
+                # If the right end of the read also matches, this read is a perfect match, continue
+                if test_read(pair[1][::-1], ref_index) != -1:
+                    continue
+                # Find the mutations in the right end of the read (90 - 110 bp ahead)
+                else:
+                    find_match(pair[1][::-1], ref_index, mismatches)
+            else:
+                continue
+
+        # If first_normal, second_reversed didn't find a match
+        if first_rev_pos != -1:
             # If the right end of the read also matches, this read is a perfect match, continue
-            if second_pos != -1:
+            if test_read(pair[1], ref_index) != -1:
                 continue
             # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
-                start = first_rev_pos + len(pair[0]) + 90
-                end = start + 20 + len(pair[1])
-                if end < len(reference):
-                    test_gap(pair[1], reference[start:end], start, mismatches)
-        # Else if Case 3
-        elif second_pos != -1:
-            # If the left end of the read also matches, this read is a perfect match, continue
-            if first_rev_pos != -1:
-                continue
-            # Find the mutations in the left end of the read (90 - 110 bp back)
+                find_match(pair[1], ref_index, mismatches)
+        else:
+            match_found = find_match(pair[0][::-1], ref_index, mismatches)
+            
+            if match_found == 1:
+                # If the right end of the read also matches, this read is a perfect match, continue
+                if test_read(pair[1], ref_index) != -1:
+                    continue
+                # Find the mutations in the right end of the read (90 - 110 bp ahead)
+                else:
+                    find_match(pair[1], ref_index, mismatches)
             else:
-                start = second_pos - 110 - len(pair[0])
-                end = second_pos - 90
-                if start >= 0:
-                    test_gap(pair[0][::-1], reference[start:end], start, mismatches)
-        # Else if Case 4
-        elif second_rev_pos != -1:
-            # If the left end of the read also matches, this read is a perfect match, continue
-            if first_pos != -1:
                 continue
-            # Find the mutations in the left end of the read (90 - 110 bp back)
-            else:
-                start = second_rev_pos - 110 - len(pair[0])
-                end = second_rev_pos - 90
-                if start >= 0:
-                    test_gap(pair[0], reference[start:end], start, mismatches)
+
 
     # Iterate through the dictionary of mutations and pick only the ones that are observed above a certain threshold
     true_snps = []
