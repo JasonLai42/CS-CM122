@@ -185,7 +185,7 @@ if __name__ == "__main__":
     true_snps = []
     for k, v in mismatches.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
-        if v > 2:
+        if v > 1:
             true_snps.append([k[0], k[1], k[2]])
 
     true_snps = sorted(true_snps, key=lambda x: x[2])
