@@ -1,0 +1,7 @@
+>practice_W_3_chr_1
+>SNP
+A,G,3425
+>INS
+ACGTA,12434
+>DEL
+CACGG,12
