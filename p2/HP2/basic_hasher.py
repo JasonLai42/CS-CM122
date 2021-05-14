@@ -58,7 +58,11 @@ def parse_ref_file(ref_fn):
     TODO: Use this space to implement any additional functions you might need
 
 """
-# https://stackoverflow.com/questions/45706896/attributeerror-module-numpy-has-no-attribute-flip
+
+# INDEL FUNCTIONS
+
+# Adapted from: https://stackoverflow.com/questions/45706896/attributeerror-module-numpy-has-no-attribute-flip
+# .flip() is not being found in my numpy module so I found an implementation for it online
 def flip(m, axis):
     if not hasattr(m, 'ndim'):
         m = np.asarray(m)
@@ -74,14 +78,26 @@ match_cost = 3
 mismatch_cost = -1
 gap_cost = -2
 
+# Adapted from: https://tiefenauer.github.io/blog/smith-waterman/
+# Used this resource to find a numpy implementation of the algorithm, but a lot of the code is my own
+# Affine gap not implemented
+# Build the scoring matrix
 def build_matrix(ref, read):
     global match_cost
     global mismatch_cost
     global gap_cost
 
+    # Zero out a 2D array
     H = np.zeros((len(ref) + 1, len(read) + 1), np.int)
-    H[0] = [0, -2, -4, -6, -8, -10, -12]
-    H[:, 0] = [0, -2, -4, -6, -8, -10, -12, -14]
+    # Initialize the first row/col with values
+    count = -gap_cost
+    for i in range(1, len(read) + 1):
+        H[0, i] = count
+        count -= gap_cost
+    count = -gap_cost
+    for i in range(1, len(ref) + 1):
+        H[i, 0] = count
+        count -= gap_cost
 
     for row, col in itertools.product(range(1, H.shape[0]), range(1, H.shape[1])):
         match = 0
@@ -97,14 +113,21 @@ def build_matrix(ref, read):
         H[row, col] = max(match, deletion, insertion)
     return H
 
+# Backtrack to find the 
 def backtrack(H_flip, ref_rev, read_rev, pos, SNP, insert, delete):
     global match_cost
     global mismatch_cost
     global gap_cost
 
+    # Flip the matrix so the bottom right corner is now the top left corner
     if len(H_flip) == 1 and len(H_flip[0]) == 1:
         return
 
+    # In each step we prune away the used parts of the H_flip matrix
+    # In the insertion case, we only prune the leftmost column of H_flip and do not prune ref_rev, since we move right and did not use a character of ref_rev
+    # In the deletion case, we only prune the top row of H_flip and do not prune read_rev, since we move down and did not use a character of read_rev
+
+    # Test if diagonal (match or SNP) was a possible path
     if ref_rev[0] == read_rev[0]:
         if H_flip[0, 0] - match_cost == H_flip[1, 1]:
             backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, SNP, insert, delete)
@@ -113,52 +136,50 @@ def backtrack(H_flip, ref_rev, read_rev, pos, SNP, insert, delete):
             SNP.append([ref_rev[0], read_rev[0], pos])
             backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, SNP, insert, delete)
 
+    # Test if right (insertion) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[0, 1]:
         insert.append([ref_rev[0], pos])
         backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, SNP, insert, delete)
     
+    # Test if down (delete) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[1, 0]:
         delete.append([ref_rev[0], pos])
         backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, SNP, insert, delete)
 
+    return
 
-def traceback(H, b, b_='', old_i=0):
-    # flip H to get index of **last** occurrence of H.max() with np.argmax()
+def needleman_wunsch(ref, read, SNP_dict, insertion_dict, deletion_dict):
+    H = build_matrix(ref, read)
+    
+    # Flip the matrix so the bottom right corner is now the top left corner for backtracking
     H_flip = flip(flip(H, 0), 1)
-    i_, j_ = np.unravel_index(H_flip.argmax(), H_flip.shape)
-    i, j = np.subtract(H.shape, (i_ + 1, j_ + 1))  # (i, j) are **last** indexes of H.max()
-    if H[i, j] == 0:
-        return b_, j
-    b_ = b[j - 1] + '-' + b_ if old_i - i > 1 else b[j - 1] + b_
-    return traceback(H[0:i, 0:j], b, b_, i)
+    read_rev = read[::-1]
+    ref_rev = ref[::-1]
 
-# def smith_waterman(a, b, match_score=3, gap_cost=2):
-#     a, b = a.upper(), b.upper()
-#     H = matrix(a, b, match_score, gap_cost)
-#     b_, pos = traceback(H, b)
-#     return pos, pos + len(b_)
+    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, SNP_dict, insertion_dict, deletion_dict)
+    return
 
-# def rotate(text, n):
-#     first_half = text[0:len(text) - n] 
-#     second_half = text[len(text) - n:]
-#     return second_half + first_half
+# SNP FUNCTIONS
 
-# def construct_BWT_matrix(text):
-#     rotations_array = []
-#     for index, character in enumerate(text):
-#         rotations_array.append(rotate(text, index))
-#     rotations_array = sorted(rotations_array)
-#     return rotations_array
+# Return position of matched 50 bp end in reference genome, otherwise return -1
+def test_read(seq_read, ref_index):
+    if ref_index.get(seq_read, "DNE") != "DNE":
+        return ref_index[seq_read]
+    else:
+        return -1
 
-# def get_BWT_string(rotations_array):
-#     BWT = ""
-#     for rotation in rotations_array:
-#         BWT += rotation[len(rotation)-1]
-#     return BWT
-
-# def get_BWT(reference_w_dollar):
-#     rotations_array = construct_BWT_matrix(reference_w_dollar)
-#     return get_BWT_string(rotations_array)
+def find_match(seq_read, ref_dict, mismatches):
+    match_found = -1
+    for k, v in ref_dict.items():
+        for index in range(0, len(k)-1):
+            if seq_read[:index] == k[:index] and seq_read[index + 1:] == k[index + 1:]:
+                if mismatches.get((k[index], seq_read[index], v + index), "DNE") == "DNE":
+                    mismatches[(k[index], seq_read[index], v + index)] = 1
+                else: 
+                    mismatches[(k[index], seq_read[index], v + index)] += 1
+                match_found = 1
+                continue
+    return match_found
 
 
 
@@ -198,63 +219,91 @@ if __name__ == "__main__":
     # Remember that for each paired read, the left (first) end always precedes the right (second) end in the reference genome.
     # So, we handle each left end, but after we find (if we find) a match for the left end, we will match the right end 
     # using read_order_dict to get the right end immediately.
-    ref_index = dict()
-    for index in range(0, len(reference)):
-        first_part = reference[index:index+10]
-        if ref_index.get(first_part, "DNE") == "DNE":
-            ref_index[first_part] = [index]
-        else:
-            ref_index[first_part].append(index)
-
-    read_order_dict = dict()
-    left_ends = []
-    for input_read in input_reads:
-        read_order_dict[input_read[0]] = input_read[1]
-        left_ends.append(input_read[0])
     
-    # for left_end in left_ends:
-    #     left_end_rev = left_end[::-1]
-    #     if ref_index.get(left_end[0:10], "DNE") != "DNE":
-    #         for start_index in ref_index[left_end]:
-    #             if ref_index == 0
-    #     if ref_index.get(left_end_rev[0:10], "DNE") != "DNE":
+    # REFERENCE INDEX
+    # Create dictionary of all substrings of length 50 (key) and their positions (value)
+    ref_index = dict()
+    final_index = len(reference) - len(input_reads[0][0])
+    for index in range(0, final_index + 1):
+        ref_index[reference[index:index+50]] = index
 
-    read = "ATGAGT"
-    ref = "ATGGCGT"
+    # ref_index = dict()
+    # for index in range(0, len(reference)):
+    #     first_part = reference[index:index+10]
+    #     if ref_index.get(first_part, "DNE") == "DNE":
+    #         ref_index[first_part] = [index]
+    #     else:
+    #         ref_index[first_part].append(index)
 
-    H = np.zeros((len(ref) + 1, len(read) + 1), np.int)
-    H[0] = [0, -2, -4, -6, -8, -10, -12]
-    H[:, 0] = [0, -2, -4, -6, -8, -10, -12, -14]
+    # TARGET DICTIONARIES
+    # Preliminary SNPs
+    mismatches = dict()
+    # Preliminary insertions
+    inserts = dict()
+    # Preliminary deletes
+    deletes = dict()
 
-    for row, col in itertools.product(range(1, H.shape[0]), range(1, H.shape[1])):
-        match = 0
-        # If the letters match, diagonal is match; else, diagonal is mismatch (SNP)
-        if ref[row - 1] == read[col - 1]:
-            match = H[row - 1, col - 1] + match_cost
+    # Create dictionary of all mutations (key) and the number of times they are observed (value)
+    for pair in input_reads:
+        # Case 1: check if left end is in reference dictionary
+        first_pos = test_read(pair[0], ref_index)
+        # Case 2: check if reverse of left end is in reference dictionary
+        first_rev_pos = test_read(pair[0][::-1], ref_index)
+
+        # If found a match for left end in Case 1
+        if first_pos != -1:
+            # If the right end of the read also matches, this read is a perfect match, continue
+            if test_read(pair[1][::-1], ref_index) != -1:
+                continue
+            # Find the mutations in the right end of the read (90 - 110 bp ahead)
+            else:
+                find_match(pair[1][::-1], ref_index, mismatches)
         else:
-            match = H[row - 1, col - 1] + mismatch_cost
-        # Down is deletion
-        deletion = H[row - 1, col] + gap_cost
-        # Right is insertion
-        insertion = H[row, col - 1] + gap_cost
-        H[row, col] = max(match, deletion, insertion)
+            match_found = find_match(pair[0], ref_index, mismatches)
+            
+            if match_found == 1:
+                # If the right end of the read also matches, this read is a perfect match, continue
+                if test_read(pair[1][::-1], ref_index) != -1:
+                    continue
+                # Find the mutations in the right end of the read (90 - 110 bp ahead)
+                else:
+                    find_match(pair[1][::-1], ref_index, mismatches)
+            else:
+                continue
 
-    SNP = []
-    inserts = []
-    deletes = []
+        # If found a match for left end in Case 2
+        if first_rev_pos != -1:
+            # If the right end of the read also matches, this read is a perfect match, continue
+            if test_read(pair[1], ref_index) != -1:
+                continue
+            # Find the mutations in the right end of the read (90 - 110 bp ahead)
+            else:
+                find_match(pair[1], ref_index, mismatches)
+        else:
+            match_found = find_match(pair[0][::-1], ref_index, mismatches)
+            
+            if match_found == 1:
+                # If the right end of the read also matches, this read is a perfect match, continue
+                if test_read(pair[1], ref_index) != -1:
+                    continue
+                # Find the mutations in the right end of the read (90 - 110 bp ahead)
+                else:
+                    find_match(pair[1], ref_index, mismatches)
+            else:
+                continue
 
-    read_rev = read[::-1]
-    ref_rev = ref[::-1]
 
-    H_flip = flip(flip(H, 0), 1)
+    # Iterate through the dictionary of mutations and pick only the ones that are observed above a certain threshold
+    true_snps = []
+    for k, v in mismatches.items():
+        # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
+        if v > 1:
+            true_snps.append([k[0], k[1], k[2]])
 
-    print(H_flip[0:, 0:])
+    true_snps = sorted(true_snps, key=lambda x: x[2])
+    print(true_snps)
 
-    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, SNP, inserts, deletes)
 
-    print(SNP)
-    print(inserts)
-    print(deletes)
 
 
     snps = [['A', 'G', 3425]]
