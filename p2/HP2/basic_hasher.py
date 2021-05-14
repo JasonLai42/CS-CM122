@@ -168,6 +168,8 @@ def test_read(seq_read, ref_index):
     else:
         return -1
 
+# Find if this read has a match somewhere in the reference
+# Match is defined by having 1 or fewer SNPs
 def find_match(seq_read, ref_dict, mismatches):
     match_found = -1
     for k, v in ref_dict.items():
@@ -257,17 +259,18 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
-                find_match(pair[1][::-1], ref_index, mismatches)
+                right_match_found = find_match(pair[1][::-1], ref_index, mismatches)
         else:
-            match_found = find_match(pair[0], ref_index, mismatches)
+            left_match_found = find_match(pair[0], ref_index, mismatches)
             
-            if match_found == 1:
+            if left_match_found == 1:
                 # If the right end of the read also matches, this read is a perfect match, continue
                 if test_read(pair[1][::-1], ref_index) != -1:
                     continue
                 # Find the mutations in the right end of the read (90 - 110 bp ahead)
                 else:
-                    find_match(pair[1][::-1], ref_index, mismatches)
+                    right_match_found = find_match(pair[1][::-1], ref_index, mismatches)
+            # If no close matches for found this read at all, it could either be garbage or Indels
             else:
                 continue
 
@@ -278,17 +281,18 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the right end of the read (90 - 110 bp ahead)
             else:
-                find_match(pair[1], ref_index, mismatches)
+                right_match_found = find_match(pair[1], ref_index, mismatches)
         else:
-            match_found = find_match(pair[0][::-1], ref_index, mismatches)
+            left_match_found = find_match(pair[0][::-1], ref_index, mismatches)
             
-            if match_found == 1:
+            if left_match_found == 1:
                 # If the right end of the read also matches, this read is a perfect match, continue
                 if test_read(pair[1], ref_index) != -1:
                     continue
                 # Find the mutations in the right end of the read (90 - 110 bp ahead)
                 else:
-                    find_match(pair[1], ref_index, mismatches)
+                    right_match_found = find_match(pair[1], ref_index, mismatches)
+            # If no close matches for found this read at all, it could either be garbage or Indels
             else:
                 continue
 
@@ -301,12 +305,11 @@ if __name__ == "__main__":
             true_snps.append([k[0], k[1], k[2]])
 
     true_snps = sorted(true_snps, key=lambda x: x[2])
-    print(true_snps)
 
 
 
 
-    snps = [['A', 'G', 3425]]
+    snps = true_snps
     insertions = [['ACGTA', 12434]]
     deletions = [['CACGG', 12]]
 

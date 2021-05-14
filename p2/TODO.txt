@@ -1,0 +1,4 @@
+- Find a way to have the reference dictionary in order so that when we find a match for one end of a paired read, we need only search one half of the reference
+- In SNP part of main functions, add test for matching the right end of a paired read first, then matching the left end i.e. Case 3 and 4
+- Append unmatched reads to a new array so we can iterate through it later and determine each one as either garbage or Indel for Needleman-Wunsch
+- Maybe have find_match() have a tolerance of 2 SNPs instead of just 1
