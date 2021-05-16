@@ -117,7 +117,7 @@ def build_matrix(ref, read):
     return H, H[len(ref), len(read)]
 
 # Backtrack to find the 
-def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes, curr_run, expected_index, type):
+def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     global match_cost
     global mismatch_cost
     global gap_cost
@@ -133,39 +133,21 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes, curr
     # Test if diagonal (match or SNP) was a possible path
     if ref_rev[0] == read_rev[0]:
         if H_flip[0, 0] - match_cost == H_flip[1, 1]:
-            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes, "", -1, "none")
+            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
     else:
         if H_flip[0, 0] - mismatch_cost == H_flip[1, 1]:
             SNP.append([ref_rev[0], read_rev[0], index + pos])
-            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes, "", -1, "none")
+            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
 
     # Test if right (insertion) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[0, 1]:
-        if type == "ins":
-            if index + pos == expected_index:
-                inserts.append([read_rev[0], index + pos])
-                inserts.append([read_rev[0] + curr_run, index + pos])
-                backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes, read_rev[0] + curr_run, index + pos - 1, "ins")
-            else:
-                inserts.append([read_rev[0], index + pos])
-                backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes, read_rev[0], index + pos - 1, "ins")
-        else:
-            inserts.append([read_rev[0], index + pos])
-            backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes, read_rev[0], index + pos - 1, "ins")
+        inserts.append([read_rev[0], index + pos])
+        backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes)
 
     # Test if down (delete) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[1, 0]:
-        if type == "del":
-            if index + pos == expected_index:
-                deletes.append([ref_rev[0], index + pos])
-                deletes.append([ref_rev[0] + curr_run, index + pos])
-                backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes, ref_rev[0] + curr_run, index + pos - 1, "del")
-            else:
-                deletes.append([ref_rev[0], index + pos])
-                backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes, ref_rev[0], index + pos - 1, "del")
-        else:
-            deletes.append([ref_rev[0], index + pos])
-            backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes, ref_rev[0], index + pos - 1, "del")
+        deletes.append([ref_rev[0], index + pos])
+        backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes)
 
     return
 
@@ -181,7 +163,14 @@ def needleman_wunsch(ref, read, index):
     inserts = []
     deletes = []
 
-    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes, "", -1, "none")
+    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
+    if len(SNP) > 20:
+        SNP = []
+    if len(inserts) > 20:
+        inserts = []
+    if len(deletes) > 20:
+        deletes = []
+        
     return score, SNP, inserts, deletes
 
 # SNP FUNCTIONS
@@ -492,10 +481,10 @@ if __name__ == "__main__":
                 ref_end_index = indices[1] + 16
                 read_end_index = 32
 
-            temp_score, SNP_iter, insert_iter, delete_iter = needleman_wunsch(reference[ref_start_index:ref_end_index], read[0][read_start_index:read_end_index], ref_start_index)
+            if ref_end_index - ref_start_index > 60:
+                continue
 
-            # print(insert_iter)
-            # print(delete_iter)
+            temp_score, SNP_iter, insert_iter, delete_iter = needleman_wunsch(reference[ref_start_index:ref_end_index], read[0][read_start_index:read_end_index], ref_start_index)
 
             # curr_insertion = ""
             # curr_run_start = -1
