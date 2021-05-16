@@ -1,4 +1,92 @@
 - Find a way to have the reference dictionary in order so that when we find a match for one end of a paired read, we need only search one half of the reference
-- In SNP part of main functions, add test for matching the right end of a paired read first, then matching the left end i.e. Case 3 and 4
+X - In SNP part of main functions, add test for matching the right end of a paired read first, then matching the left end i.e. Case 3 and 4
 - Append unmatched reads to a new array so we can iterate through it later and determine each one as either garbage or Indel for Needleman-Wunsch
+    - Wipe the ref dict and make new reference index using kmers instead; check for partially matched reads
+        - Then run Needleman-Wunsch on those reads
 - Maybe have find_match() have a tolerance of 2 SNPs instead of just 1
+
+DIFF CHECK THIS:
+
+SNP 1:
+G,C,231
+A,C,563
+G,T,1029
+C,G,1044
+C,A,1393
+C,T,1740
+G,T,1813
+T,C,2024
+C,G,2086
+T,C,2198
+T,A,2299
+A,G,2351
+T,A,2759
+A,C,2870
+G,T,3067
+C,G,3137
+G,A,3384
+G,C,3731
+G,C,4109
+G,C,4170
+A,C,4273
+A,G,4555
+C,A,4564
+T,C,4772
+C,G,4885
+G,T,4935
+G,T,5147
+G,C,5345
+A,T,5646
+G,C,5764
+C,A,5830
+G,C,6130
+G,T,6265
+G,A,6383
+C,T,6449
+G,T,6896
+T,A,6934
+T,C,6988
+G,A,7321
+A,G,7385
+A,C,7505
+C,T,7641
+T,A,7672
+G,T,7946
+A,G,8027
+T,C,8158
+C,G,8272
+C,G,8452
+C,A,8548
+G,A,8591
+G,T,9000
+A,G,9474
+T,A,9704
+A,G,9719
+
+SNP 2:
+G,C,231
+G,T,1029
+C,A,1393
+C,T,1740
+G,T,1813
+T,C,2024
+C,G,2086
+T,C,2198
+A,G,2351
+A,C,4273
+T,C,4772
+G,T,5147
+G,C,5764
+C,A,5830
+G,T,6265
+G,A,7321
+A,G,7385
+A,C,7505
+C,T,7641
+T,A,7672
+G,T,7946
+A,G,8027
+A,G,9474
+T,A,9704
+
+

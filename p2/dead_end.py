@@ -4,7 +4,6 @@ import itertools
 import numpy as np
 import time
 import zipfile
-import pickle
 
 from numpy.lib import insert
 
@@ -114,7 +113,7 @@ def build_matrix(ref, read):
         # Right is insertion
         insertion = H[row, col - 1] + gap_cost
         H[row, col] = max(match, deletion, insertion)
-    return H, H[len(ref), len(read)]
+    return H
 
 # Backtrack to find the 
 def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
@@ -123,7 +122,7 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     global gap_cost
 
     # Flip the matrix so the bottom right corner is now the top left corner
-    if len(ref_rev) == 0 or len(read_rev) == 0:
+    if len(H_flip) == 1 or len(H_flip[0]) == 1:
         return
 
     # In each step we prune away the used parts of the H_flip matrix
@@ -143,16 +142,16 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     if H_flip[0, 0] - gap_cost == H_flip[0, 1]:
         inserts.append([read_rev[0], index + pos])
         backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes)
-
+    
     # Test if down (delete) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[1, 0]:
         deletes.append([ref_rev[0], index + pos])
         backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes)
 
-    return
+    return H_flip[0, 0]
 
 def needleman_wunsch(ref, read, index):
-    H, score = build_matrix(ref, read)
+    H = build_matrix(ref, read)
     
     # Flip the matrix so the bottom right corner is now the top left corner for backtracking
     H_flip = flip(flip(H, 0), 1)
@@ -163,7 +162,7 @@ def needleman_wunsch(ref, read, index):
     inserts = []
     deletes = []
 
-    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
+    score = backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
     return score, SNP, inserts, deletes
 
 # SNP FUNCTIONS
@@ -254,7 +253,7 @@ if __name__ == "__main__":
 
     # Array to store potential indels (reads that we did not find a perfect match for or only one SNP)
     oriented_potential_indels = []
-    #unoriented_potential_indels = []
+    unoriented_potential_indels = []
 
     # HANDLE SNPS
 
@@ -393,81 +392,36 @@ if __name__ == "__main__":
             # else:
 
         # If we reach the end of the loop (not a single continue was hit), this read has absolutely no matches; add both ends to potential_indels
-        #unoriented_potential_indels.append(pair)
+        unoriented_potential_indels.append(pair)
 
     # HANDLE INDELS
-
-    # Remake reference dictionary with substrings that are approximately 1/3 the size of the reads
-    # This is about ~16.666 since 50/3 = ~16.666; we'll round down and use 16
-    # We'll match each read by each of its thirds to see if we get any partial matches i.e. parts of the string match but are offset
-    ref_index.clear()
-    final_index = len(reference) - 16
-    for index in range(0, final_index + 1):
-        ref_index[reference[index:index+16]] = index
-
-    # We'll test each of these strings that we are confident are valid reads for the paired-end reads (because the other end of this read has a match)
-    # However, we'll only test for indels if 2 out of 3 of the thirds of the read match; we'll do read[0:16], read[16:32], read[32:48]
     SNP_iterator = []
     insert_iterator = []
     delete_iterator = []
+    final_index = len(reference) - len(input_reads[0][0]) - 10
     for read in oriented_potential_indels:
-        match_count = 0
-        first_index = -1
-        second_index = -1
-        third_index = -1
-        if ref_index.get(read[0][0:16], "DNE") != "DNE":
-            first_index = ref_index[read[0][0:16]]
-            match_count += 1
-        if ref_index.get(read[0][16:32], "DNE") != "DNE":
-            second_index = ref_index[read[0][16:32]]
-            match_count += 1
-        if ref_index.get(read[0][32:48], "DNE") != "DNE":
-            third_index = ref_index[read[0][32:48]]
-            match_count += 1
-
-        if match_count >= 1:
-            score = -10000
-            SNP_iter = []
-            insert_iter = []
-            delete_iter = []
-            if first_index != -1:
-                if first_index + 50 < len(reference):
-                    temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[first_index:first_index+50], read[0], first_index)
-                    if temp_score > score:
-                        score = temp_score
-                        SNP_iter = temp_SNP
-                        insert_iter = temp_inserts
-                        delete_iter = temp_deletes
-
-            if second_index != -1:
-                if second_index + 34 < len(reference) and second_index - 16 >= 0:
-                    temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[second_index-16:second_index+34], read[0], second_index-16)
-                    if temp_score > score:
-                        score = temp_score
-                        SNP_iter = temp_SNP
-                        insert_iter = temp_inserts
-                        delete_iter = temp_deletes
-
-            if second_index != -1:
-                if third_index + 18 < len(reference) and third_index - 32 > 0:
-                    temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[third_index-32:third_index+18], read[0], third_index-50)
-                    if temp_score > score:
-                        score = temp_score
-                        SNP_iter = temp_SNP
-                        insert_iter = temp_inserts
-                        delete_iter = temp_deletes
-
-            SNP_iterator = SNP_iterator + SNP_iter
-            insert_iterator = insert_iterator + insert_iter
-            delete_iterator = delete_iterator + delete_iter
+        score = -10000
+        SNP_iter = []
+        insert_iter = []
+        delete_iter = []
+        for index in range(read[1], final_index + 1):
+            temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[index:index+60], read[0], index)
+            if temp_score > score:
+                score = temp_score
+                SNP_iter = temp_SNP
+                insert_iter = temp_inserts
+                delete_iter = temp_deletes
+        SNP_iterator = SNP_iterator + SNP_iter
+        insert_iterator = insert_iterator + insert_iter
+        delete_iterator = delete_iterator + delete_iter
 
     # GET FINAL TARGETS
 
-    # for SNP in SNP_iterator:
-    #     if mismatches.get((SNP[0], SNP[1], SNP[2]), "DNE") == "DNE":
-    #         mismatches[(SNP[0], SNP[1], SNP[2])] = 1
-    #     else: 
-    #         mismatches[(SNP[0], SNP[1], SNP[2])] += 1
+    for SNP in SNP_iterator:
+        if mismatches.get((SNP[0], SNP[1], SNP[2]), "DNE") == "DNE":
+            mismatches[(SNP[0], SNP[1], SNP[2])] = 1
+        else: 
+            mismatches[(SNP[0], SNP[1], SNP[2])] += 1
 
     for insertion in insert_iterator:
         if inserts.get((insertion[0], insertion[1]), "DNE") == "DNE":
@@ -481,33 +435,23 @@ if __name__ == "__main__":
         else: 
             deletes[(deletion[0], deletion[1])] += 1
 
-    # Write dictionaries for fast tuning of thresholds
-    with open('obj/'+ 'mismatches' + '.pkl', 'wb') as f:
-        pickle.dump(mismatches, f, pickle.HIGHEST_PROTOCOL)
-
-    with open('obj/'+ 'inserts' + '.pkl', 'wb') as f:
-        pickle.dump(inserts, f, pickle.HIGHEST_PROTOCOL)
-
-    with open('obj/'+ 'deletes' + '.pkl', 'wb') as f:
-        pickle.dump(deletes, f, pickle.HIGHEST_PROTOCOL)
-
     # Iterate through the dictionary of mutations and pick only the ones that are observed above a certain threshold
     true_snps = []
     for k, v in mismatches.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
-        if v > 2:
+        if v > 1:
             true_snps.append([k[0], k[1], k[2]])
 
     true_insertions = []
     for k, v in inserts.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
-        if v > 2:
+        if v > 1:
             true_insertions.append([k[0], k[1]])
 
     true_deletions = []
     for k, v in deletes.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
-        if v > 2:
+        if v > 1:
             true_deletions.append([k[0], k[1]])
 
     true_snps = sorted(true_snps, key=lambda x: x[2])
