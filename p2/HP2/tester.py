@@ -18,7 +18,7 @@ if __name__ == "__main__":
     inserts = load_obj('inserts')
     deletes = load_obj('deletes')
 
-    print(mismatches)
+    #print(mismatches)
     print(inserts)
     print(deletes)
 
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     true_snps = []
     for k, v in mismatches.items():
         # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
-        if v > 1:
+        if v > 2:
             true_snps.append([k[0], k[1], k[2]])
 
     true_insertions = []
@@ -44,9 +44,9 @@ if __name__ == "__main__":
     true_snps = sorted(true_snps, key=lambda x: x[2])
     true_insertions = sorted(true_insertions, key=lambda x: x[1])
     true_deletions = sorted(true_deletions, key=lambda x: x[1])
-    print(true_snps)
-    print(true_insertions)
-    print(true_deletions)
+    #print(true_snps)
+    #print(true_insertions)
+    #print(true_deletions)
 
 
 
