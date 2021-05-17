@@ -122,9 +122,13 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     global mismatch_cost
     global gap_cost
 
+    # If one of the lists is getting too large, toss this matching out
+    if len(SNP) > 20 or len(inserts) > 20 or len(deletes) > 20:
+        return 1
+
     # Flip the matrix so the bottom right corner is now the top left corner
     if len(ref_rev) == 0 or len(read_rev) == 0:
-        return
+        return -1
 
     # In each step we prune away the used parts of the H_flip matrix
     # In the insertion case, we only prune the leftmost column of H_flip and do not prune ref_rev, since we move right and did not use a character of ref_rev
@@ -133,23 +137,31 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     # Test if diagonal (match or SNP) was a possible path
     if ref_rev[0] == read_rev[0]:
         if H_flip[0, 0] - match_cost == H_flip[1, 1]:
-            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
+            abort_status = backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
+            if abort_status == 1:
+                return abort_status
     else:
         if H_flip[0, 0] - mismatch_cost == H_flip[1, 1]:
             SNP.append([ref_rev[0], read_rev[0], index + pos])
-            backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
+            abort_status = backtrack(H_flip[1:, 1:], ref_rev[1:], read_rev[1:], pos-1, index, SNP, inserts, deletes)
+            if abort_status == 1:
+                return abort_status
 
     # Test if right (insertion) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[0, 1]:
         inserts.append([read_rev[0], index + pos])
-        backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes)
+        abort_status = backtrack(H_flip[0:, 1:], ref_rev, read_rev[1:], pos, index, SNP, inserts, deletes)
+        if abort_status == 1:
+            return abort_status
 
     # Test if down (delete) was a possible path
     if H_flip[0, 0] - gap_cost == H_flip[1, 0]:
         deletes.append([ref_rev[0], index + pos])
-        backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes)
+        abort_status = backtrack(H_flip[1:, 0:], ref_rev[1:], read_rev, pos-1, index, SNP, inserts, deletes)
+        if abort_status == 1:
+            return abort_status
 
-    return
+    return -1
 
 def needleman_wunsch(ref, read, index):
     H, score = build_matrix(ref, read)
@@ -163,12 +175,10 @@ def needleman_wunsch(ref, read, index):
     inserts = []
     deletes = []
 
-    backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
-    if len(SNP) > 20:
+    abort_status = backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
+    if abort_status == 1:
         SNP = []
-    if len(inserts) > 20:
         inserts = []
-    if len(deletes) > 20:
         deletes = []
         
     return score, SNP, inserts, deletes
