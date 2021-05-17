@@ -116,7 +116,7 @@ def build_matrix(ref, read):
         H[row, col] = max(match, deletion, insertion)
     return H, H[len(ref), len(read)]
 
-# Backtrack to find the 
+# Backtrack to find the different paths that yield the highest score
 def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
     global match_cost
     global mismatch_cost
@@ -163,7 +163,13 @@ def backtrack(H_flip, ref_rev, read_rev, pos, index, SNP, inserts, deletes):
 
     return -1
 
+# Executes the needleman-wunsch algorithm and returns lists of SNPs, insertions, and deletions
+# Does not handle multiple base pair indels, but from my observations it does return a good chunk of them as single bp insertions or deletions
+# (especially deletions) correctly, but gives false positives at positions beyond the ends of the indel
+# If I had time, implement smith-waterman instead as TA Brandon Jew said it would help remove the false positives at the ends and then I could simply
+# loop through the single base pair indels and build multi-base-pair indels
 def needleman_wunsch(ref, read, index):
+    # Get the scoring matrix and the end highest score
     H, score = build_matrix(ref, read)
     
     # Flip the matrix so the bottom right corner is now the top left corner for backtracking
@@ -171,11 +177,14 @@ def needleman_wunsch(ref, read, index):
     read_rev = read[::-1]
     ref_rev = ref[::-1]
 
+    # Store the returned targets for each category
     SNP = []
     inserts = []
     deletes = []
 
+    # Backtrack through scoring matrix and find any target indels/SNPs and store them
     abort_status = backtrack(H_flip, ref_rev, read_rev, len(ref_rev)-1, index, SNP, inserts, deletes)
+    # If we encounter an especially large list, we probably hit an alternating substring e.g. GCGCGCGCGCGCGCGCGCGC, so toss this matching
     if abort_status == 1:
         SNP = []
         inserts = []
@@ -306,6 +315,7 @@ if __name__ == "__main__":
     # using read_order_dict to get the right end immediately.
     
     # REFERENCE INDEX
+
     # Create dictionary of all substrings of length 50 (key) and their positions (value)
     ref_index = dict()
     final_index = len(reference) - len(input_reads[0][0])
@@ -320,15 +330,8 @@ if __name__ == "__main__":
     for index in range(0, final_index + 1):
         substr_ref_index[reference[index:index+16]] = index
 
-    # ref_index = dict()
-    # for index in range(0, len(reference)):
-    #     first_part = reference[index:index+10]
-    #     if ref_index.get(first_part, "DNE") == "DNE":
-    #         ref_index[first_part] = [index]
-    #     else:
-    #         ref_index[first_part].append(index)
-
     # TARGET DICTIONARIES
+
     # Preliminary SNPs
     mismatches = dict()
     # Preliminary insertions
@@ -338,7 +341,6 @@ if __name__ == "__main__":
 
     # Array to store potential indels (reads that we did not find a perfect match for or only one SNP)
     oriented_potential_indels = []
-    #unoriented_potential_indels = []
 
     # HANDLE SNPS
 
@@ -476,8 +478,7 @@ if __name__ == "__main__":
             # If no close matches for found this read at all, it could either be garbage or Indels
             # else:
 
-        # If we reach the end of the loop (not a single continue was hit), this read has absolutely no matches; add both ends to potential_indels
-        #unoriented_potential_indels.append(pair)
+        # If we reach the end of the loop (not a single continue was hit), this read has absolutely no matches; treat as garbage
 
     # HANDLE INDELS
 
@@ -488,6 +489,8 @@ if __name__ == "__main__":
     delete_iterator = []
     for read in oriented_potential_indels:
         match_count = 0
+        # Get the indices of anywhere we found matches for the thirds of potential indel strings
+        # We do this because indels will be strings where parts of them will align perfectly, but it's offset due to insertion or deletion
         indices = [-1, -1, -1]
         if substr_ref_index.get(read[0][0:16], "DNE") != "DNE":
             indices[0] = substr_ref_index[read[0][0:16]]
@@ -499,39 +502,10 @@ if __name__ == "__main__":
             indices[2] = substr_ref_index[read[0][32:48]]
             match_count += 1
 
+        # If we found more than 1 match, we found that there's to parts of read
         if match_count > 1:
-            # score = -10000
-            # SNP_iter = []
-            # insert_iter = []
-            # delete_iter = []
-            # if first_index != -1:
-            #     if first_index + 50 < len(reference):
-            #         temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[first_index:first_index+50], read[0], first_index)
-            #         if temp_score > score:
-            #             score = temp_score
-            #             SNP_iter = temp_SNP
-            #             insert_iter = temp_inserts
-            #             delete_iter = temp_deletes
-
-            # if second_index != -1:
-            #     if second_index + 34 < len(reference) and second_index - 16 >= 0:
-            #         temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[second_index-16:second_index+34], read[0], second_index-16)
-            #         if temp_score > score:
-            #             score = temp_score
-            #             SNP_iter = temp_SNP
-            #             insert_iter = temp_inserts
-            #             delete_iter = temp_deletes
-
-            # if second_index != -1:
-            #     if third_index + 18 < len(reference) and third_index - 32 > 0:
-            #         temp_score, temp_SNP, temp_inserts, temp_deletes = needleman_wunsch(reference[third_index-32:third_index+18], read[0], third_index-50)
-            #         if temp_score > score:
-            #             score = temp_score
-            #             SNP_iter = temp_SNP
-            #             insert_iter = temp_inserts
-            #             delete_iter = temp_deletes
-            # Get the full length of reference string
-            # Get the start index
+            # Calculate the starting and ending indices based on the matching thirds to get the entire portion of the reference that contains the indel
+            # See find_match() function for more details about a similar process to this
             ref_start_index = 0
             read_start_index = 0
             if indices[0] != -1:
@@ -550,48 +524,16 @@ if __name__ == "__main__":
                 ref_end_index = indices[1] + 16
                 read_end_index = 32
 
+            # We limit the reference string size that we suspect to contain the indel to a length of 60, effectively limiting the size of our potential indel
             if ref_end_index - ref_start_index > 60:
                 continue
 
+            # Run needleman-wunsch on this potential indel-containing read; not we may not pass in the whole read, but just the part of the read (the thirds)
+            # where the indel may lie
             temp_score, SNP_iter, insert_iter, delete_iter = needleman_wunsch(reference[ref_start_index:ref_end_index], read[0][read_start_index:read_end_index], ref_start_index)
 
-            # curr_insertion = ""
-            # curr_run_start = -1
-            # curr_run = -1
-            # for insertion in insert_iter:
-            #     if curr_insertion == "":
-            #         curr_insertion += insertion[0]
-            #         curr_run_start = insertion[1]
-            #         curr_run = insertion[1] + 1
-
-            #     else:
-            #         if insertion[1] == curr_run:
-            #             curr_insertion += insertion[0]
-            #             curr_run = insertion[1] + 1
-            #         else:
-            #             insert_iterator.append([curr_insertion, curr_run_start])
-            #             curr_insertion = ""
-            #             curr_run_start = -1
-            #             curr_run = -1
-            
-            # curr_deletion = ""
-            # for deletion in delete_iter:
-            #     if curr_deletion == "":
-            #         curr_deletion += deletion[0]
-            #         curr_run_start = deletion[1]
-            #         curr_run = deletion[1] + 1
-
-            #     else:
-            #         if deletion[1] == curr_run:
-            #             curr_deletion += deletion[0]
-            #             curr_run = deletion[1] + 1
-            #         else:
-            #             delete_iterator.append([curr_deletion, curr_run_start])
-            #             curr_deletion = ""
-            #             curr_run_start = -1
-            #             curr_run = -1
-
-
+            # Append the indels to their respective lists so that we can iterate through and count them later
+            # We found SNPs earlier so we don't use the SNPs returned (would probably require tuning in order for the SNPs to be viable to increase my sensitivity)
             # SNP_iterator = SNP_iterator + SNP_iter
             insert_iterator = insert_iterator + insert_iter
             delete_iterator = delete_iterator + delete_iter
@@ -604,6 +546,7 @@ if __name__ == "__main__":
     #     else: 
     #         mismatches[(SNP[0], SNP[1], SNP[2])] += 1
 
+    # Tally the indels we found
     for insertion in insert_iterator:
         if inserts.get((insertion[0], insertion[1]), "DNE") == "DNE":
             inserts[(insertion[0], insertion[1])] = 1
@@ -616,15 +559,16 @@ if __name__ == "__main__":
         else: 
             deletes[(deletion[0], deletion[1])] += 1
 
-    # Write dictionaries for fast tuning of thresholds
-    with open('obj/'+ 'mismatches' + '.pkl', 'wb') as f:
-        pickle.dump(mismatches, f, pickle.HIGHEST_PROTOCOL)
+    # Write dictionaries to pickle files so that I can load them in a testing program in order to tune my voting rules on what passes as an SNP or indel
+    # This way, we avoid having to run the program again and again
+    # with open('obj/'+ 'mismatches' + '.pkl', 'wb') as f:
+    #     pickle.dump(mismatches, f, pickle.HIGHEST_PROTOCOL)
 
-    with open('obj/'+ 'inserts' + '.pkl', 'wb') as f:
-        pickle.dump(inserts, f, pickle.HIGHEST_PROTOCOL)
+    # with open('obj/'+ 'inserts' + '.pkl', 'wb') as f:
+    #     pickle.dump(inserts, f, pickle.HIGHEST_PROTOCOL)
 
-    with open('obj/'+ 'deletes' + '.pkl', 'wb') as f:
-        pickle.dump(deletes, f, pickle.HIGHEST_PROTOCOL)
+    # with open('obj/'+ 'deletes' + '.pkl', 'wb') as f:
+    #     pickle.dump(deletes, f, pickle.HIGHEST_PROTOCOL)
 
     # Iterate through the dictionary of mutations and pick only the ones that are observed above a certain threshold
     true_snps = []
@@ -635,25 +579,26 @@ if __name__ == "__main__":
 
     true_insertions = []
     for k, v in inserts.items():
-        # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
+        # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this insertion)
         if v > 1:
             true_insertions.append([k[0], k[1]])
 
     true_deletions = []
     for k, v in deletes.items():
-        # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this SNP)
+        # Adjust what v > ? for changing confidence level of SNP (v is the number of occurrences we observed this deletion)
         if v > 1:
             true_deletions.append([k[0], k[1]])
 
+    # Sort the final SNPs/indels by index so that we can compare the printout with the answer key easily in a diffchecker
     true_snps = sorted(true_snps, key=lambda x: x[2])
     true_insertions = sorted(true_insertions, key=lambda x: x[1])
     true_deletions = sorted(true_deletions, key=lambda x: x[1])
-    print(true_snps)
-    print(true_insertions)
-    print(true_deletions)
+    # print(true_snps)
+    # print(true_insertions)
+    # print(true_deletions)
 
 
-
+    # Set the final lists for output to the lists we found
     snps = true_snps
     insertions = true_insertions
     deletions = true_deletions
