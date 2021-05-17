@@ -183,18 +183,77 @@ def test_read(seq_read, ref_index):
         return -1
 
 # Find if this read has a match somewhere in the reference
-# Match is defined by having 1 or fewer SNPs
-def find_match(seq_read, ref_dict, mismatches):
+# Match is defined by having 2 or fewer SNPs
+def find_match(ref, seq_read, substr_ref_dict, mismatches):
     match_found = -1
-    for k, v in ref_dict.items():
-        for index in range(0, len(k)-1):
-            if seq_read[:index] == k[:index] and seq_read[index + 1:] == k[index + 1:]:
-                if mismatches.get((k[index], seq_read[index], v + index), "DNE") == "DNE":
-                    mismatches[(k[index], seq_read[index], v + index)] = 1
-                else: 
-                    mismatches[(k[index], seq_read[index], v + index)] += 1
-                match_found = v
-                break
+    match_count = 0
+
+    # Get the indices in the reference string where the thirds of the read string perfectly match
+    indices = [-1, -1, -1]
+    if substr_ref_dict.get(seq_read[0:16], "DNE") != "DNE":
+        indices[0] = substr_ref_dict[seq_read[0:16]]
+        match_count += 1
+    if substr_ref_dict.get(seq_read[16:32], "DNE") != "DNE":
+        indices[1] = substr_ref_dict[seq_read[16:32]]
+        match_count += 1
+    if substr_ref_dict.get(seq_read[32:48], "DNE") != "DNE":
+        indices[2] = substr_ref_dict[seq_read[32:48]]
+        match_count += 1
+
+    # If we had at least one matching third, we have a potential match (SNP could lie in the other 2 thirds at most)
+    if match_count > 0:
+        # Need to get the full reference string to compare the read to, so we get the starting and ending indices for the full 50 bp length string
+        ref_start_index = 0
+        ref_end_index = 0
+
+        # If we only have 1 matching third, this means this string has at least 2 SNPs, so we produce the starting and ending indices from one index
+        if match_count == 1:
+            if indices[0] != -1:
+                ref_start_index = indices[0]
+                ref_end_index = indices[0] + 50
+            elif indices[1] != -1:
+                ref_start_index = indices[1] - 16
+                ref_end_index = indices[1] + 34
+            elif indices[2] != -1:
+                ref_start_index = indices[2] - 32
+                ref_end_index = indices[2] + 18
+        # If we have 2 or 3 matching thirds, we get the starting and ending indices from 2 of the matching thirds
+        # Note, starting index will be either the first or second third (one of these two must have been a match)
+        # Likewise with ending index and second and third thirds
+        # Even though we only handle matching 48 base pairs, an SNP in the last two base pairs is still handled in the case that all thirds match
+        else:
+            if indices[0] != -1:
+                ref_start_index = indices[0]
+            elif indices[1] != -1:
+                ref_start_index = indices[1] - 16
+
+            if indices[2] != 1:
+                ref_end_index = indices[2] + 18
+            elif indices[1] != 1:
+                ref_end_index = indices[1] + 34
+
+            # If the reference string is longer than 50, we're not dealing with SNPs so it's not a potential match
+            if ref_end_index - ref_start_index > 50:
+                return match_found
+
+        # Iterate through the reference string (potential match) and read, and find any mismatching characters at the respective index (possible SNP)
+        # Store them in potential_SNP; we only allow up 2 SNPs for it to be a match, so if len(potential_SNP) > 2, we reject this and say no match found
+        potential_match = ref[ref_start_index:ref_end_index]
+        potential_SNP = []
+        for index in range(0, len(potential_match)):
+            if seq_read[index] != potential_match[index]:
+                if len(potential_SNP) == 2:
+                    return match_found
+                else:
+                    potential_SNP.append(index)
+
+        # Put the SNPs in our mismatch index and then return index in the full reference genome for the match we found
+        for SNP_index in potential_SNP:
+            if mismatches.get((potential_match[SNP_index], seq_read[SNP_index], ref_start_index + SNP_index), "DNE") == "DNE":
+                mismatches[(potential_match[SNP_index], seq_read[SNP_index], ref_start_index + SNP_index)] = 1
+            else: 
+                mismatches[(potential_match[SNP_index], seq_read[SNP_index], ref_start_index + SNP_index)] += 1
+        match_found = ref_start_index
     return match_found
 
 
@@ -243,6 +302,14 @@ if __name__ == "__main__":
     for index in range(0, final_index + 1):
         ref_index[reference[index:index+50]] = index
 
+    # Remake reference dictionary with substrings that are approximately 1/3 the size of the reads
+    # This is about ~16.666 since 50/3 = ~16.666; we'll round down and use 16
+    # We'll match each read by each of its thirds to see if we get any partial matches i.e. parts of the string match but are offset
+    substr_ref_index = dict()
+    final_index = len(reference) - 16
+    for index in range(0, final_index + 1):
+        substr_ref_index[reference[index:index+16]] = index
+
     # ref_index = dict()
     # for index in range(0, len(reference)):
     #     first_part = reference[index:index+10]
@@ -276,14 +343,14 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the right end of the read
             else:
-                right_match_found = find_match(pair[1][::-1], ref_index, mismatches)
+                right_match_found = find_match(reference, pair[1][::-1], substr_ref_index, mismatches)
                 if right_match_found != -1:
                     continue
                 else:
                     oriented_potential_indels.append([pair[1][::-1], first_pos + 50])
                     continue
         else:
-            left_match_found = find_match(pair[0], ref_index, mismatches)
+            left_match_found = find_match(reference, pair[0], substr_ref_index, mismatches)
             
             if left_match_found != -1:
                 # If the right end of the read also matches, this read is a perfect match, continue
@@ -291,7 +358,7 @@ if __name__ == "__main__":
                     continue
                 # Find the mutations in the right end of the read
                 else:
-                    right_match_found = find_match(pair[1][::-1], ref_index, mismatches)
+                    right_match_found = find_match(reference, pair[1][::-1], substr_ref_index, mismatches)
                     if right_match_found != -1:
                         continue
                     else:
@@ -309,14 +376,14 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the right end of the read
             else:
-                right_match_found = find_match(pair[1], ref_index, mismatches)
+                right_match_found = find_match(reference, pair[1], substr_ref_index, mismatches)
                 if right_match_found != -1:
                     continue
                 else:
                     oriented_potential_indels.append([pair[1], first_rev_pos + 50])
                     continue
         else:
-            left_match_found = find_match(pair[0][::-1], ref_index, mismatches)
+            left_match_found = find_match(reference, pair[0][::-1], substr_ref_index, mismatches)
             
             if left_match_found != -1:
                 # If the right end of the read also matches, this read is a perfect match, continue
@@ -324,7 +391,7 @@ if __name__ == "__main__":
                     continue
                 # Find the mutations in the right end of the read
                 else:
-                    right_match_found = find_match(pair[1], ref_index, mismatches)
+                    right_match_found = find_match(reference, pair[1], substr_ref_index, mismatches)
                     if right_match_found != -1:
                         continue
                     else:
@@ -342,14 +409,14 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the leftt end of the read 
             else:
-                left_match_found = find_match(pair[0][::-1], ref_index, mismatches)
+                left_match_found = find_match(reference, pair[0][::-1], substr_ref_index, mismatches)
                 if left_match_found != -1:
                     continue
                 else:
                     oriented_potential_indels.append([pair[0][::-1], second_pos + 50])
                     continue
         else:
-            right_match_found = find_match(pair[1], ref_index, mismatches)
+            right_match_found = find_match(reference, pair[1], substr_ref_index, mismatches)
             
             if right_match_found != -1:
                 # If the left end of the read also matches, this read is a perfect match, continue
@@ -357,7 +424,7 @@ if __name__ == "__main__":
                     continue
                 # Find the mutations in the left end of the read
                 else:
-                    left_match_found = find_match(pair[0][::-1], ref_index, mismatches)
+                    left_match_found = find_match(reference, pair[0][::-1], substr_ref_index, mismatches)
                     if left_match_found != -1:
                         continue
                     else:
@@ -375,14 +442,14 @@ if __name__ == "__main__":
                 continue
             # Find the mutations in the right end of the read
             else:
-                left_match_found = find_match(pair[0], ref_index, mismatches)
+                left_match_found = find_match(reference, pair[0], substr_ref_index, mismatches)
                 if left_match_found != -1:
                     continue
                 else:
                     oriented_potential_indels.append([pair[0], second_rev_pos + 50])
                     continue
         else:
-            right_match_found = find_match(pair[1][::-1], ref_index, mismatches)
+            right_match_found = find_match(reference, pair[1][::-1], substr_ref_index, mismatches)
             
             if right_match_found != -1:
                 # If the right end of the read also matches, this read is a perfect match, continue
@@ -390,7 +457,7 @@ if __name__ == "__main__":
                     continue
                 # Find the mutations in the right end of the read
                 else:
-                    left_match_found = find_match(pair[0], ref_index, mismatches)
+                    left_match_found = find_match(reference, pair[0], substr_ref_index, mismatches)
                     if left_match_found != -1:
                         continue
                     else:
@@ -404,14 +471,6 @@ if __name__ == "__main__":
 
     # HANDLE INDELS
 
-    # Remake reference dictionary with substrings that are approximately 1/3 the size of the reads
-    # This is about ~16.666 since 50/3 = ~16.666; we'll round down and use 16
-    # We'll match each read by each of its thirds to see if we get any partial matches i.e. parts of the string match but are offset
-    ref_index.clear()
-    final_index = len(reference) - 16
-    for index in range(0, final_index + 1):
-        ref_index[reference[index:index+16]] = index
-
     # We'll test each of these strings that we are confident are valid reads for the paired-end reads (because the other end of this read has a match)
     # However, we'll only test for indels if 2 out of 3 of the thirds of the read match; we'll do read[0:16], read[16:32], read[32:48]
     SNP_iterator = []
@@ -420,14 +479,14 @@ if __name__ == "__main__":
     for read in oriented_potential_indels:
         match_count = 0
         indices = [-1, -1, -1]
-        if ref_index.get(read[0][0:16], "DNE") != "DNE":
-            indices[0] = ref_index[read[0][0:16]]
+        if substr_ref_index.get(read[0][0:16], "DNE") != "DNE":
+            indices[0] = substr_ref_index[read[0][0:16]]
             match_count += 1
-        if ref_index.get(read[0][16:32], "DNE") != "DNE":
-            indices[1] = ref_index[read[0][16:32]]
+        if substr_ref_index.get(read[0][16:32], "DNE") != "DNE":
+            indices[1] = substr_ref_index[read[0][16:32]]
             match_count += 1
-        if ref_index.get(read[0][32:48], "DNE") != "DNE":
-            indices[2] = ref_index[read[0][32:48]]
+        if substr_ref_index.get(read[0][32:48], "DNE") != "DNE":
+            indices[2] = substr_ref_index[read[0][32:48]]
             match_count += 1
 
         if match_count > 1:

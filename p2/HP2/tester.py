@@ -48,7 +48,7 @@ if __name__ == "__main__":
     #print(true_insertions)
     #print(true_deletions)
 
-
+    
 
     snps = true_snps
     insertions = true_insertions
