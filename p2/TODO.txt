@@ -5,6 +5,15 @@ X - In SNP part of main functions, add test for matching the right end of a pair
         - Then run Needleman-Wunsch on those reads
 - Maybe have find_match() have a tolerance of 2 SNPs instead of just 1
 
+NEW TODO:
+- Convert to smith-waterman
+- Figure out multi-base indels
+- Make it faster
+    - Make smith-waterman return when list gets too long; nip it in the bud
+- Use hashing approach to find probable SNPs rather than searching whole reference dictionary; modify find_match()
+    - Then do find match on right end of read after index where left end of read was found
+
+
 DIFF CHECK THIS:
 
 SNP 1:
