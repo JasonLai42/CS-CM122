@@ -41,14 +41,14 @@ def parse_reads_file(reads_fn):
 
 """
 # To keep track where forking branches are
-def get_graph_dict(text_arr):
+def get_graph_dict(text_arr, non_overlap):
     graph_dict = dict()
     node_degrees = dict()
-    size = len(text_arr[0]) - 2
+    size = len(text_arr[0]) - non_overlap - 1
     for text in text_arr:
         text = text.strip('\n')
         left_end = text[:size]
-        right_end = text[1:]
+        right_end = text[non_overlap:]
         if left_end in graph_dict:
             graph_dict[left_end].append(right_end)
         else:
