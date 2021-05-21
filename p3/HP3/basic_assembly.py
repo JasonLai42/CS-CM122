@@ -173,7 +173,7 @@ if __name__ == "__main__":
     """
     # VARIABLES
     # Tune these to get better score
-    k = 25
+    k = 30
     coverage = 10
     error_threshold = 2
 
