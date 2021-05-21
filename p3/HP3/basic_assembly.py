@@ -173,9 +173,9 @@ if __name__ == "__main__":
     """
     # VARIABLES
     # Tune these to get better score
-    k = 15
-    coverage = 250
-    error_threshold = 20
+    k = 25
+    coverage = 10
+    error_threshold = 2
 
     # Unwrap lists inside input_reads, we'll just assume left end is forward and reverse the right end of the read
     reads = []
