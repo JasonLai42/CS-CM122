@@ -41,14 +41,33 @@ def parse_reads_file(reads_fn):
 
 """
 # To keep track where forking branches are
-def get_graph_dict(text_arr, non_overlap):
+def get_kmers(text_arr, k, kmer_counts, coverage):
+    size = len(text_arr[0]) - k + 1
+    for text in text_arr:
+        for index in range(0, size):
+            if kmer_counts.get(text[index:index+k], "DNE") != "DNE":
+                kmer_counts[text[index:index+k]] += ((kmer_counts[text[index:index+k]] * coverage) + 1) / coverage
+            else:
+                kmer_counts[text[index:index+k]] = 1 / coverage
+    return
+
+def filter_kmers(kmer_counts, error_threshold):
+    to_delete = []
+    for k, v in kmer_counts.items():
+        if round(v) < error_threshold:
+            to_delete.append(k)
+        else:
+            kmer_counts[k] = round(v)
+    for key in to_delete:
+        del kmer_counts[key]
+
+def get_graph_dict(kmer_dict, k):
     graph_dict = dict()
     node_degrees = dict()
-    size = len(text_arr[0]) - non_overlap - 1
-    for text in text_arr:
-        text = text.strip('\n')
-        left_end = text[:size]
-        right_end = text[non_overlap:]
+    size = k - 1
+    for kmer, count in kmer_dict.items():
+        left_end = kmer[:size]
+        right_end = kmer[1:]
         if left_end in graph_dict:
             graph_dict[left_end].append(right_end)
         else:
@@ -152,10 +171,34 @@ if __name__ == "__main__":
             TODO: Call functions to do the actual assembly here
 
     """
+    # VARIABLES
+    # Tune these to get better score
+    k = 15
+    coverage = 250
+    error_threshold = 20
+
+    # Unwrap lists inside input_reads, we'll just assume left end is forward and reverse the right end of the read
+    reads = []
+    for pair in input_reads:
+        reads.append(pair[0])
+        reads.append(pair[1][::-1])
+    
+    # GET THE KMERS
+    # First get the kmers from the reads
+    kmer_counts = dict()
+    get_kmers(reads, k, kmer_counts, coverage)
+    # Remove any kmers that don't meet our error threshold
+    filter_kmers(kmer_counts, error_threshold)
+
+    # GET DE BRUIJN GRAPH
+    graph_dict, node_degrees = get_graph_dict(kmer_counts, k)
+    nodes = get_graph_nodes(node_degrees)
+
+    # GET CONTIGS
+    all_contigs = get_maximal_non_branching(graph_dict, node_degrees, nodes)
 
 
-
-    contigs = ['GCTGACTAGCTAGCTACGATCGATCGATCGATCGATCGATGACTAGCTAGCTAGCGCTGACT']
+    contigs = all_contigs
 
     output_fn = args.output_file
     zip_fn = output_fn + '.zip'
