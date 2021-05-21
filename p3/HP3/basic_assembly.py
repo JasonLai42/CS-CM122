@@ -40,17 +40,22 @@ def parse_reads_file(reads_fn):
     TODO: Use this space to implement any additional functions you might need
 
 """
-# To keep track where forking branches are
+# Get the kmers; text_arr is the reads, k is the size of kmers, kmer_counts is the dictionary to keep track of the number of occurrences 
+# of kmers, and coverage to compute kmer_counts
 def get_kmers(text_arr, k, kmer_counts, coverage):
     size = len(text_arr[0]) - k + 1
     for text in text_arr:
+        # Divide a read into k-sized kmers
         for index in range(0, size):
+            # If the kmer exists, increment its count
             if kmer_counts.get(text[index:index+k], "DNE") != "DNE":
                 kmer_counts[text[index:index+k]] += ((kmer_counts[text[index:index+k]] * coverage) + 1) / coverage
+            # Else, create a new entry for this kmer
             else:
                 kmer_counts[text[index:index+k]] = 1 / coverage
     return
 
+# Filter out kmers that don't have a count that meets the error_threshold
 def filter_kmers(kmer_counts, error_threshold):
     to_delete = []
     for k, v in kmer_counts.items():
@@ -61,18 +66,23 @@ def filter_kmers(kmer_counts, error_threshold):
     for key in to_delete:
         del kmer_counts[key]
 
+# Adapted from my Stepik chapter 3.10 solution
+# Create a de Bruijn graph using the kmers
 def get_graph_dict(kmer_dict, k):
     graph_dict = dict()
     node_degrees = dict()
     size = k - 1
+    # For the kmers left after filtering in the kmer_count dictionary, we'll form a debruijn graph
     for kmer, count in kmer_dict.items():
         left_end = kmer[:size]
         right_end = kmer[1:]
+        # Add nodes and edges for this kmer
         if left_end in graph_dict:
             graph_dict[left_end].append(right_end)
         else:
             graph_dict[left_end] = [right_end]
             
+        # Keep track of the degrees in and out of the nodes
         if left_end in node_degrees:
             node_degrees[left_end][1] += 1
         else:
@@ -83,12 +93,14 @@ def get_graph_dict(kmer_dict, k):
             node_degrees[right_end] = [1, 0]
     return graph_dict, node_degrees
 
+# Get an array of all the nodes in the de Bruijn graph
 def get_graph_nodes(node_degrees):
     nodes = []
     for key in node_degrees.keys():
         nodes.append(key)
     return nodes
 
+# Handle cycles in the graph
 def get_cycle(graph_dict, node, start_node, curr_path):
     if node in graph_dict:
         # Given that this is an isolated cycle where nodes are 1-in-1-out
@@ -104,6 +116,7 @@ def get_cycle(graph_dict, node, start_node, curr_path):
         else:
             return []
 
+# Get the maximal non-branching paths; these will form the contigs
 def get_maximal_non_branching(graph_dict, node_degrees, nodes):
     path_arrays = []
     for node in nodes:
@@ -119,12 +132,14 @@ def get_maximal_non_branching(graph_dict, node_degrees, nodes):
                         path.append(graph_dict[current_node][0])
                         current_node = graph_dict[current_node][0]
                     path_arrays.append(path)
-                    
+
+    # Delete all nodes in the graph that we non-branching paths for; the leftovers will be cycles        
     for path in path_arrays:
         for node in path:
             if node in graph_dict:
                 del graph_dict[node]
                 
+    # Get all the cyclic nodes
     cyclic_nodes = []
     cycles = []
     for key in graph_dict.keys():
@@ -133,7 +148,8 @@ def get_maximal_non_branching(graph_dict, node_degrees, nodes):
         if node in graph_dict:
             cycle = get_cycle(graph_dict, node, node, "")
             cycles += cycle
-                
+
+    # Form contigs from our non-branching paths      
     non_branching_paths = []
     for path in path_arrays:
         current_path = ""
